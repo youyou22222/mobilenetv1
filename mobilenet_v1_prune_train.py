@@ -47,7 +47,7 @@ flags.DEFINE_float('depth_multiplier', 0.5, 'Depth multiplier for mobilenet')
 flags.DEFINE_bool('quantize', True, 'Quantize training')
 flags.DEFINE_string('fine_tune_checkpoint', '',
                     'Checkpoint from which to start finetuning.')
-flags.DEFINE_string('checkpoint_dir', './tmp',
+flags.DEFINE_string('checkpoint_dir', './model',
                     'Directory for writing training checkpoints and logs')
 flags.DEFINE_string('dataset_dir', '/data/home/jyw/hcl_cassia_new/', 'Location of dataset')
 flags.DEFINE_integer('log_every_n_steps', 100, 'Number of steps per log')
@@ -65,20 +65,8 @@ _LEARNING_RATE_DECAY_FACTOR = 0.94
 
 
 def train_step(sess, train_op, global_step, train_step_kwargs):
-  """Function that takes a gradient step and specifies whether to stop.
-
-  Args:
-    sess: The current session.
-    train_op: An `Operation` that evaluates the gradients and returns the
-      total loss.
-    global_step: A `Tensor` representing the global training step.
-    train_step_kwargs: A dictionary of keyword arguments.
-
-  Returns:
-    The total loss and a boolean indicating whether or not to stop training.
-
-  Raises:
-    ValueError: if 'should_trace' is in `train_step_kwargs` but `logdir` is not.
+  """
+  Function that takes a gradient step and specifies whether to stop.
   """
   start_time = time.time()
 
@@ -115,21 +103,6 @@ def train_step(sess, train_op, global_step, train_step_kwargs):
     if sess.run(train_step_kwargs['should_log']):
       logging.info('global step %d: loss = %.4f (%.3f sec/step)',
                    np_global_step, total_loss, time_elapsed)
-  # print('global step %d: loss = %.4f (%.3f sec/step)',
-  #           np_global_step, total_loss, time_elapsed)
-  # TODO(nsilberman): figure out why we can't put this into sess.run. The
-  # issue right now is that the stop check depends on the global step. The
-  # increment of global step often happens via the train op, which used
-  # created using optimizer.apply_gradients.
-  #
-  # Since running `train_op` causes the global step to be incremented, one
-  # would expected that using a control dependency would allow the
-  # should_stop check to be run in the same session.run call:
-  #
-  #   with ops.control_dependencies([train_op]):
-  #     should_stop_op = ...
-  #
-  # However, this actually seems not to work on certain platforms.
   if 'should_stop' in train_step_kwargs:
     should_stop = sess.run(train_step_kwargs['should_stop'])
   else:
@@ -158,11 +131,6 @@ def get_quant_delay():
 
 def build_model():
   """Builds graph for model to train with rewrites for quantization.
-
-  Returns:
-    g: Graph with fake quantization ops and batch norm folding suitable for
-    training quantized weights.
-    train_tensor: Train op for execution during training.
   """
   g = tf.Graph()
   with g.as_default(), tf.device(
@@ -226,10 +194,6 @@ def get_checkpoint_init_fn():
   if FLAGS.fine_tune_checkpoint:
     variables_to_restore = slim.get_variables_to_restore()
     global_step_reset = tf.assign(tf.train.get_or_create_global_step(), 0)
-    # When restoring from a floating point model, the min/max values for
-    # quantized weights and activations are not present.
-    # We instruct slim to ignore variables that are missing during restoration
-    # by setting ignore_missing_vars=True
     slim_init_fn = slim.assign_from_checkpoint_fn(
         FLAGS.fine_tune_checkpoint,
         variables_to_restore,
